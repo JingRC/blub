@@ -1,0 +1,1475 @@
+/* pet.css - 呆萌鲸鱼 + 真实肥皂泡泡 + 自然上浮 */
+
+/* ============================================================
+   本体配色变量（换配色只改这一组，不动下面的规则）
+   ------------------------------------------------------------
+   默认值 = 主色 #1b5299 派生出来的结果，跟 renderer/outfit.js 的 bodyVars() 一致。
+   这里留一份默认是为了"JS 还没跑 / 跑挂了"时也能正常上色——否则 fill:var(--x) 取不到值
+   会变成不合法值（鲸鱼画不出来）。主人换色时由 JS 覆盖这组变量。
+   ============================================================ */
+:root {
+  --whale-body: #1b5299;    /* 主色 */
+  --whale-hi: #5f86b8;      /* 受光面（渐变上端） */
+  --whale-mid: #1b5299;     /* 主色（渐变中段） */
+  --whale-lo: #16437d;      /* 背光面（渐变下端） */
+  --whale-belly: #b1c4dc;   /* 肚皮（主色提亮） */
+  --whale-blush: #d6a2be;   /* 腮红（暖粉微调向主色） */
+  --whale-ink: #0d274b;     /* 墨色：眼睛 / 嘴 / 描边 */
+}
+/* 渐变的三个 stop 跟着变量走（stop-color 是 CSS 属性，可以吃 var()） */
+.wb-hi { stop-color: var(--whale-hi); }
+.wb-mid { stop-color: var(--whale-mid); }
+.wb-lo { stop-color: var(--whale-lo); }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  /* 完全禁用原生拖动区域，只使用 JS 拖动系统 */
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+
+/* ============================================================
+   全局修正：HTML `hidden` 属性必须真的隐藏
+   ------------------------------------------------------------
+   作者样式里的 display（如 .mood-panel{display:flex}）会覆盖
+   浏览器默认的 [hidden]{display:none}，导致设置 hidden 后元素依然可见。
+   这里把 hidden 声明为权威。
+   ============================================================ */
+[hidden] {
+  display: none !important;
+}
+
+/* 右上角工具条：📌 置顶开关 */
+.pet-tools {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 950;
+  display: flex;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+.pet-tool-btn {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid rgba(127, 180, 255, 0.5);
+  /* 底色给足不透明度：太透会在深色桌面上糊掉，看起来像"按钮消失了" */
+  background: rgba(10, 28, 52, 0.9);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.pet-tool-btn:hover { border-color: rgba(127, 255, 212, 0.7); transform: translateY(-1px); }
+/* 已置顶：彩色实心、青绿描边 */
+.pet-tool-btn[data-on="1"] {
+  border-color: rgba(127, 255, 212, 0.8);
+  background: rgba(20, 56, 92, 0.95);
+  box-shadow: 0 0 8px rgba(127, 255, 212, 0.35);
+}
+/* 未置顶：不隐身，只降饱和 + 划一道斜杠，一眼看出"没钉住" */
+.pet-tool-btn[data-on="0"] {
+  filter: grayscale(0.8);
+  border-color: rgba(150, 175, 205, 0.55);
+}
+.pet-tool-btn[data-on="0"]::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-top: 1.5px solid rgba(210, 225, 245, 0.9);
+  transform: rotate(-45deg);
+  transform-origin: center;
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end; /* 鲸鱼靠底部，上方留给对话框 */
+  padding-bottom: 8px;
+}
+
+/* 鲸鱼容器：固定在底部中心 */
+.whale {
+  width: 62%;
+  height: auto;
+  /* 不使用 CSS filter（透明窗口移动时触发 Chromium 合成放大），阴影由 SVG 内部实现 */
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* 拖动时彻底禁用可能导致放大的视觉效果（但保留挣扎/抚摸动画类） */
+.whale.dragging:not(.struggling):not(.petted) {
+  filter: none !important;
+  transform: none !important;
+  will-change: auto;
+  transition: none !important;
+}
+
+/* 拖动时整个鲸鱼保持原始渲染（但保留挣扎/抚摸动画类内的动画） */
+.whale.dragging:not(.struggling):not(.petted) * {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+}
+
+/* ---- 方块身体：主色渐变 + 粗白描边 ----
+   渐变定义在 index.html 的 <defs>（userSpaceOnUse，全画布共享一段光照） */
+.block-fill {
+  fill: url(#whaleBody);
+  stroke: #ffffff;
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+}
+
+.ahoge {
+  fill: none;
+  stroke: var(--whale-body);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.belly {
+  fill: var(--whale-belly);
+}
+
+.blush {
+  fill: var(--whale-blush);
+  opacity: 0.7;
+}
+
+.eye-white {
+  fill: #ffffff;
+  stroke: var(--whale-ink);
+  stroke-width: 1.5;
+}
+
+.eye-pupil {
+  fill: var(--whale-ink);
+}
+
+.eye-shine {
+  fill: #ffffff;
+}
+
+.mouth {
+  fill: var(--whale-ink);
+}
+
+/* ---- 换装：装扮图层（方块风粗白描边，图形由 renderer/outfit.js 画进各 #xxxLayer）---- */
+.gear-layer {
+  pointer-events: none;
+}
+.hat-fill {
+  stroke: #ffffff;
+  stroke-width: 3.2;
+  stroke-linejoin: round;
+}
+.hat-accent {
+  stroke: #ffffff;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+/* 眼镜/配饰/手持用的填充件：比帽子细一点，别太抢眼 */
+.gear-fill {
+  stroke: #ffffff;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+/* 只描边的件（眼镜框、耳机头梁、气球线…）：颜色由 outfit.js 内联给到 stroke */
+.gear-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.drop {
+  fill: #7fb4ff;
+  stroke: #ffffff;
+  stroke-width: 2.5;
+}
+
+.bubble-bg {
+  fill: #1b5299;
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+.bubble-text {
+  fill: #ffffff;
+}
+
+.tool-handle {
+  fill: #ffffff;
+  stroke: #0a1f3d;
+  stroke-width: 2;
+}
+
+.tool-head {
+  fill: #7fb4ff;
+  stroke: #0a1f3d;
+  stroke-width: 2;
+}
+
+.sign-bg {
+  fill: #ffffff;
+  stroke: #0a1f3d;
+  stroke-width: 2.5;
+}
+
+.sign text {
+  fill: #0a1f3d;
+}
+
+.spout, .bubble-icon, .tool-held, .sign {
+  opacity: 0;
+}
+
+.status {
+  position: absolute;
+  bottom: 4px;
+  font: 11px/1.3 system-ui, "Segoe UI", sans-serif;
+  color: #cfe6ff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  opacity: 0.85;
+  -webkit-app-region: no-drag;
+}
+
+/* ============================================================
+   实时用量统计条（鲸鱼下方：按来源分行显示）
+   ============================================================ */
+
+.usage-bar {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  width: auto;
+  max-width: calc(100% - 16px);
+  margin: 2px auto 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 10px 4px;
+  border-radius: 10px;
+  background: rgba(10, 28, 52, 0.72);
+  border: 1px solid rgba(127, 180, 255, 0.35);
+  backdrop-filter: blur(3px);
+  -webkit-app-region: no-drag;
+  pointer-events: none;
+  animation: usagePop 0.3s ease-out;
+  box-sizing: border-box;
+}
+
+@keyframes usagePop {
+  from { opacity: 0; transform: translateY(6px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.usage-tokens {
+  font: 700 14px/1.2 system-ui, "Segoe UI", sans-serif;
+  color: #7fffd4;
+  text-shadow: 0 0 8px rgba(127, 255, 212, 0.5);
+  letter-spacing: 0.5px;
+}
+
+/* 来源明细行（DSH / 桌宠 各一行） */
+.usage-rows {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.usage-row {
+  font: 9px/1.4 system-ui, "Segoe UI", sans-serif;
+  white-space: nowrap;
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+}
+
+.usage-row .ur-name {
+  color: #cfe6ff;
+  font-weight: 700;
+}
+
+.usage-row .ur-src-dsh .ur-name  { color: #7fb4ff; }
+.usage-row .ur-src-pet .ur-name  { color: #ffd27f; }
+
+.usage-row .ur-val { color: #9fd0ff; }
+.usage-row .ur-in   { color: #7fb4ff; }
+.usage-row .ur-out  { color: #ffd27f; }
+.usage-row .ur-cache{ color: #7fffd4; }
+
+/* 用量增长时的脉冲动画 */
+.usage-bar.bump .usage-tokens {
+  animation: usageBump 0.5s ease-out;
+}
+
+@keyframes usageBump {
+  0% { transform: scale(1); color: #7fffd4; }
+  40% { transform: scale(1.35); color: #ffe66d; text-shadow: 0 0 14px rgba(255, 230, 109, 0.9); }
+  100% { transform: scale(1); color: #7fffd4; }
+}
+
+/* ============================================================
+   会议旁听：实时字幕条（鲸鱼下方，只在旁听时出现）
+   一眼能看出三件事：在听、听了多久、刚听到哪句
+   ============================================================ */
+
+.meeting-bar {
+  position: relative;
+  width: auto;
+  max-width: calc(100% - 12px);
+  margin: 4px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 9px 5px;
+  border-radius: 10px;
+  background: rgba(8, 26, 46, 0.86);
+  border: 1px solid rgba(127, 255, 212, 0.45);
+  backdrop-filter: blur(3px);
+  -webkit-app-region: no-drag;
+  pointer-events: none;
+  z-index: 600;
+}
+
+.meeting-bar-meta {
+  font: 700 10px/1.3 system-ui, "Segoe UI", sans-serif;
+  color: #7fffd4;
+  letter-spacing: 0.4px;
+}
+
+.meeting-bar-text {
+  font: 11px/1.45 "Microsoft YaHei", system-ui, sans-serif;
+  color: #dbe9ff;
+  max-height: 32px;
+  overflow: hidden;
+}
+
+.meeting-bar-text.pop { animation: meetingLineIn 0.3s ease-out; }
+
+@keyframes meetingLineIn {
+  from { opacity: 0.2; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   自定义对话框（气泡样式，贴在鲸鱼旁边，不遮挡鲸鱼）
+   ============================================================ */
+
+.pet-dialog {
+  position: absolute;
+  /* 放在鲸鱼上方（窗口加高后的透明区域） */
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 260px;
+  max-width: 90vw;
+  z-index: 9999;
+  -webkit-app-region: no-drag;
+  animation: dialogPop 0.25s ease-out;
+  pointer-events: auto;
+}
+
+@keyframes dialogPop {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.92); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* 指向鲸鱼的箭头（对话框底部向下指） */
+.dialog-box::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 10px solid transparent;
+  border-top-color: rgba(127, 180, 255, 0.65);
+  border-bottom: 0;
+}
+
+.dialog-box {
+  background: rgba(10, 28, 52, 0.92);
+  backdrop-filter: blur(4px);
+  border: 1.5px solid rgba(127, 180, 255, 0.65);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  color: #e8f3ff;
+  font: 13px/1.5 system-ui, "Segoe UI", sans-serif;
+  position: relative;
+}
+
+/* 指向鲸鱼的箭头 */
+.dialog-box::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 10px solid transparent;
+  border-top-color: rgba(127, 180, 255, 0.65);
+  border-bottom: 0;
+}
+
+.dialog-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #9fd0ff;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dialog-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+
+.dialog-input-wrap {
+  margin-bottom: 8px;
+}
+
+.dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(127, 180, 255, 0.45);
+  background: rgba(6, 18, 36, 0.85);
+  color: #e8f3ff;
+  font: 12.5px/1.4 system-ui, "Segoe UI", sans-serif;
+  outline: none;
+}
+
+.dialog-input:focus {
+  border-color: #7fb4ff;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog-btn {
+  padding: 5px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(127, 180, 255, 0.4);
+  background: rgba(24, 60, 108, 0.8);
+  color: #cfe6ff;
+  font: 12.5px system-ui, "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dialog-btn:hover {
+  background: rgba(34, 82, 140, 0.9);
+}
+
+.dialog-btn.primary {
+  background: rgba(27, 82, 153, 0.95);
+  border-color: rgba(127, 180, 255, 0.7);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.dialog-btn.primary:hover {
+  background: rgba(37, 100, 184, 0.95);
+}
+
+/* ============================================================
+   眨眼动画
+   ============================================================ */
+
+.eye-white, .eye-pupil, .eye-shine {
+  transform-origin: center;
+  animation: naturalBlink 4s ease-in-out infinite;
+}
+
+.eye-white { animation-delay: 0s; }
+.eye-pupil { animation-delay: 0s; }
+.eye-shine { animation-delay: 0s; }
+
+.eye-white:nth-of-type(2),
+.eye-pupil:nth-of-type(2),
+.eye-shine:nth-of-type(2) {
+  animation-delay: 0.05s;
+}
+
+@keyframes naturalBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  94% { transform: scaleY(0.1); }
+  96% { transform: scaleY(1); }
+  98% { transform: scaleY(0.15); }
+}
+
+/* ============================================================
+   真实肥皂泡泡效果
+   参考：薄膜干涉 + 多层高光 + 内发光
+   ============================================================ */
+
+.bubble-menu {
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  display: none;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.bubble-menu.visible {
+  display: flex;
+  pointer-events: auto;
+}
+
+.bubble-item {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  /* 初始状态：在鲸鱼下方，很小 */
+  transform: translateY(60px) scale(0.3);
+  transition: none;
+}
+
+.bubble-item.rising {
+  /* 上浮动画：从下方升起，带摇摆 */
+  animation: bubbleRise 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.bubble-item.floating {
+  /* 浮动状态保持大小和位置 */
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: bubbleFloat 3s ease-in-out infinite;
+}
+
+.bubble-item.popping {
+  animation: bubblePop 0.3s ease-out forwards;
+}
+
+/* 泡泡圆形主体 - 真实肥皂泡效果（青蓝色调） */
+.bubble-circle {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  overflow: visible;
+  
+  /* 多层渐变：基色 + 干涉色（青蓝为主） + 高光 */
+  background: 
+    /* 主高光（大椭圆，偏左上） */
+    radial-gradient(ellipse 50% 40% at 35% 30%,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(255, 255, 255, 0.5) 30%,
+      transparent 70%),
+    /* 干涉色层：青蓝渐变（避免紫色） */
+    radial-gradient(circle at 40% 40%,
+      rgba(135, 206, 250, 0.5) 0%,
+      rgba(100, 200, 230, 0.4) 25%,
+      rgba(120, 220, 200, 0.3) 50%,
+      rgba(180, 230, 250, 0.2) 75%,
+      transparent 100%),
+    /* 基色层：半透明青蓝 */
+    radial-gradient(circle at 50% 50%,
+      rgba(160, 220, 255, 0.5) 0%,
+      rgba(130, 200, 240, 0.4) 50%,
+      rgba(100, 180, 220, 0.3) 100%);
+  
+  /* 内发光 + 外发光（青蓝色调） */
+  box-shadow: 
+    /* 内发光：边缘亮环 */
+    inset 0 0 15px rgba(255, 255, 255, 0.6),
+    inset 0 0 25px rgba(160, 220, 255, 0.3),
+    /* 外发光 */
+    0 0 20px rgba(160, 220, 255, 0.5),
+    0 0 40px rgba(160, 220, 255, 0.3);
+  
+  /* 边框：半透明白色细边 */
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* 主高光反射 (::before) */
+.bubble-circle::before {
+  content: '';
+  position: absolute;
+  top: 15%;
+  left: 25%;
+  width: 35%;
+  height: 25%;
+  background: radial-gradient(ellipse at center,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.6) 40%,
+    transparent 70%);
+  border-radius: 50%;
+  transform: rotate(-30deg);
+  pointer-events: none;
+  filter: blur(1px);
+}
+
+/* 次高光点 (::after) */
+.bubble-circle::after {
+  content: '';
+  position: absolute;
+  bottom: 20%;
+  right: 20%;
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(circle at center,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%);
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(0.5px);
+}
+
+.bubble-circle:hover {
+  transform: scale(1.1);
+  box-shadow: 
+    inset 0 0 20px rgba(255, 255, 255, 0.7),
+    inset 0 0 30px rgba(160, 220, 255, 0.4),
+    0 0 30px rgba(160, 220, 255, 0.6),
+    0 0 60px rgba(160, 220, 255, 0.4);
+}
+
+.bubble-label {
+  font-size: 11px;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+/* ============================================================
+   子泡泡菜单（点击主泡泡后展开）
+   ============================================================ */
+
+.sub-menu {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  display: none;
+  pointer-events: none;
+  z-index: 150;
+}
+
+.sub-menu.visible {
+  display: flex;
+  pointer-events: auto;
+}
+
+.sub-item {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  opacity: 0;
+  transform: translateY(30px) scale(0.4);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.sub-item.rising {
+  animation: bubbleRise 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.sub-item.floating {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: bubbleFloat 3s ease-in-out infinite;
+}
+
+.sub-item .bubble-circle {
+  width: 38px;
+  height: 38px;
+  font-size: 15px;
+  box-shadow:
+    inset 0 0 10px rgba(255, 255, 255, 0.5),
+    inset 0 0 18px rgba(160, 220, 255, 0.25),
+    0 0 14px rgba(160, 220, 255, 0.4);
+}
+
+.sub-item .bubble-label {
+  font-size: 10px;
+}
+
+/* 子泡泡高亮当前模型 */
+.sub-item.active .bubble-circle {
+  box-shadow:
+    inset 0 0 10px rgba(255, 255, 255, 0.6),
+    0 0 18px rgba(120, 230, 200, 0.7);
+  border-color: rgba(160, 255, 220, 0.9);
+}
+
+.sub-item.active .bubble-label {
+  color: #b4ffe0;
+}
+
+/* ============================================================
+   泡泡上浮动画：从下方升起 + 摇摆 + 扩展
+   ============================================================ */
+
+@keyframes bubbleRise {
+  0% {
+    opacity: 0;
+    transform: translateY(60px) scale(0.3) rotate(-10deg);
+  }
+  20% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(20px) scale(0.7) rotate(5deg) translateX(-8px);
+  }
+  75% {
+    transform: translateY(5px) scale(0.9) rotate(-3deg) translateX(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg) translateX(0);
+  }
+}
+
+/* 浮动动画：到达位置后的轻柔摇摆 */
+@keyframes bubbleFloat {
+  0%, 100% {
+    transform: translateY(0) translateX(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-3px) translateX(2px) rotate(1deg);
+  }
+  50% {
+    transform: translateY(-6px) translateX(-1px) rotate(-1deg);
+  }
+  75% {
+    transform: translateY(-3px) translateX(-2px) rotate(1deg);
+  }
+}
+
+/* 泡泡破掉动画 */
+@keyframes bubblePop {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5) translateY(-20px);
+  }
+}
+
+/* 每个泡泡的上浮有延迟，形成错落感 */
+.bubble-item:nth-child(1).rising { animation-delay: 0s; }
+.bubble-item:nth-child(2).rising { animation-delay: 0.15s; }
+.bubble-item:nth-child(3).rising { animation-delay: 0.3s; }
+
+/* 浮动时也有错落 */
+.bubble-item.floating:nth-child(1) { animation-delay: 0s; }
+.bubble-item.floating:nth-child(2) { animation-delay: 0.5s; }
+.bubble-item.floating:nth-child(3) { animation-delay: 1s; }
+
+/* ============================================================
+   状态动画
+   ============================================================ */
+
+/* 尾巴动画通过 JavaScript 实现，不再使用 CSS 动画 */
+.tail-group {
+  transform-origin: 26px 57px;
+}
+
+[data-state="idle"] .whale {
+  animation: bob 2.5s ease-in-out infinite;
+}
+
+[data-state="thinking"] .spout { opacity: 1; }
+[data-state="thinking"] .drop {
+  animation: dropRise 1s ease-out infinite;
+}
+[data-state="thinking"] .drop.d1 { animation-delay: 0s; }
+[data-state="thinking"] .drop.d2 { animation-delay: 0.2s; }
+[data-state="thinking"] .drop.d3 { animation-delay: 0.4s; }
+[data-state="thinking"] .bubble-icon { opacity: 1; }
+[data-state="thinking"] .whale { animation: nod 1.5s ease-in-out infinite; }
+
+[data-state="tool"] .tool-held { opacity: 1; animation: toolSwing 0.8s ease-in-out infinite; }
+/* tool 状态尾巴摆动更快，通过 JavaScript 控制 */
+
+[data-state="approval"] .sign { opacity: 1; animation: signBeckon 1s ease-in-out infinite; }
+
+[data-state="streaming"] .whale { animation: bob 1.5s ease-in-out infinite; }
+
+[data-state="done"] .whale { animation: jump 1.5s ease-out; }
+
+/* ============================================================
+   暴击效果：星星爆炸 + 屏幕震动 + 冲击波
+   ============================================================ */
+
+/* 暴击星星容器（绝对定位在鲸鱼上方） */
+.crit-burst {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 300;
+  display: none;
+}
+
+.crit-burst.visible {
+  display: block;
+}
+
+/* 星星粒子 */
+.crit-burst .spark {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #ffe66d;
+  box-shadow: 0 0 8px rgba(255, 230, 109, 0.9), 0 0 16px rgba(255, 200, 60, 0.5);
+  opacity: 0;
+}
+
+.crit-burst.visible .spark {
+  animation: sparkFly 0.7s cubic-bezier(0.22, 0.9, 0.36, 1) forwards;
+}
+
+@keyframes sparkFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0.3) rotate(var(--rot));
+  }
+}
+
+/* 中央闪光 */
+.crit-burst .flash {
+  position: absolute;
+  left: -30px;
+  top: -30px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(255, 230, 109, 0.6) 40%, transparent 70%);
+  opacity: 0;
+}
+
+.crit-burst.visible .flash {
+  animation: flashPop 0.45s ease-out forwards;
+}
+
+@keyframes flashPop {
+  0% { opacity: 0; transform: scale(0.2); }
+  30% { opacity: 1; transform: scale(1.3); }
+  100% { opacity: 0; transform: scale(2.2); }
+}
+
+/* 冲击波圆环 */
+.crit-burst .ring {
+  position: absolute;
+  left: -40px;
+  top: -40px;
+  width: 80px;
+  height: 80px;
+  border: 3px solid rgba(255, 230, 109, 0.8);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.crit-burst.visible .ring {
+  animation: ringExpand 0.6s ease-out forwards;
+}
+
+@keyframes ringExpand {
+  0% { opacity: 0.9; transform: scale(0.3); }
+  70% { opacity: 0.5; transform: scale(1.6); }
+  100% { opacity: 0; transform: scale(2.4); }
+}
+
+/* 大号"暴击"文字 */
+.crit-burst .crit-text {
+  position: absolute;
+  left: -60px;
+  top: -45px;
+  width: 120px;
+  text-align: center;
+  font: 800 28px system-ui, "Segoe UI", sans-serif;
+  color: #ffd23f;
+  text-shadow: 0 0 12px rgba(255, 200, 50, 0.9), 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 24px rgba(255, 160, 30, 0.6);
+  opacity: 0;
+  letter-spacing: 2px;
+}
+
+.crit-burst.visible .crit-text {
+  animation: critTextPop 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
+}
+
+@keyframes critTextPop {
+  0% { opacity: 0; transform: scale(0.3) rotate(-8deg); }
+  35% { opacity: 1; transform: scale(1.35) rotate(3deg); }
+  60% { opacity: 1; transform: scale(1.1) rotate(-2deg); }
+  100% { opacity: 0; transform: scale(1.2) rotate(0deg) translateY(-18px); }
+}
+
+/* 屏幕震动（作用在 stage） */
+.stage.shake {
+  animation: screenShake 0.5s ease-out;
+}
+
+@keyframes screenShake {
+  0% { transform: translate(0, 0); }
+  15% { transform: translate(-6px, 4px); }
+  30% { transform: translate(6px, -4px); }
+  45% { transform: translate(-5px, -3px); }
+  60% { transform: translate(4px, 3px); }
+  75% { transform: translate(-3px, 2px); }
+  90% { transform: translate(2px, -1px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* 鲸鱼受击抖动 */
+.whale.hit {
+  animation: whaleHit 0.5s ease-out;
+}
+
+@keyframes whaleHit {
+  0% { transform: scale(1); }
+  20% { transform: scale(0.92) rotate(-3deg); }
+  40% { transform: scale(1.08) rotate(2deg); }
+  60% { transform: scale(0.96) rotate(-1deg); }
+  80% { transform: scale(1.03) rotate(1deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+[data-state="error"] .whale {
+  animation: bellyFlip 2s ease-in-out;
+  /* 出错提示靠"翻肚皮 + 红光投影"表达，**不再改身体填充**——
+     主人自选的颜色不该在出错时被整只染红（用户配色优先）。 */
+  filter: drop-shadow(0 0 6px rgba(220, 70, 70, 0.85)) drop-shadow(0 4px 8px rgba(180, 60, 60, 0.6));
+}
+
+[data-state="disconnected"] .whale {
+  opacity: 0.5;
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* ============================================================
+   情绪监测：心情气泡 + 鲸鱼情绪反应 + 情绪报告
+   ============================================================ */
+
+/* ---- 心情陪伴气泡（鲸鱼上方）---- */
+.mood-bubble {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 260px;
+  padding: 7px 11px;
+  border-radius: 12px;
+  background: rgba(10, 28, 52, 0.82);
+  border: 1px solid rgba(127, 180, 255, 0.45);
+  box-shadow: 0 4px 14px rgba(0, 10, 30, 0.45);
+  z-index: 500;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+  opacity: 0;
+}
+.mood-bubble.show {
+  animation: moodBubbleIn 0.35s ease-out forwards;
+}
+@keyframes moodBubbleIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.92); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+.mood-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top-color: rgba(127, 180, 255, 0.45);
+  border-bottom: 0;
+}
+.mood-bubble-text {
+  font: 11.5px/1.5 "Microsoft YaHei", system-ui, sans-serif;
+  color: #e8f3ff;
+  white-space: pre-line;
+  text-align: center;
+}
+.mood-bubble[data-mood="down"] { border-color: rgba(140, 170, 255, 0.6); }
+.mood-bubble[data-mood="down"] .mood-bubble-text { color: #cfe0ff; }
+
+/* ---- 心情气泡上的交互按钮 ---- */
+.mood-bubble-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.mood-action-btn {
+  border: 1px solid rgba(127, 180, 255, 0.45);
+  background: rgba(127, 180, 255, 0.14);
+  color: #dbe9ff;
+  font: 10.5px/1.3 "Microsoft YaHei", system-ui, sans-serif;
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.mood-action-btn:hover {
+  background: rgba(127, 180, 255, 0.3);
+  color: #fff;
+}
+
+/* ---- 鲸鱼情绪反应（data-mood 由 emotion.js 挂在 #stage 上）---- */
+.stage[data-mood="happy"] .whale { animation: moodHappyBounce 0.7s ease-in-out 3; }
+.stage[data-mood="happy"] .blush { animation: moodBlushGlow 0.7s ease-in-out 3; }
+@keyframes moodHappyBounce {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-14px) rotate(-4deg); }
+  70% { transform: translateY(-4px) rotate(2deg); }
+}
+@keyframes moodBlushGlow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.stage[data-mood="down"] .whale { animation: moodDownSink 2.4s ease-in-out 2; filter: brightness(0.9); }
+@keyframes moodDownSink {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(5px) rotate(-1.5deg); }
+}
+
+.stage[data-mood="stressed"] .whale,
+.stage[data-mood="angry"] .whale { animation: moodShake 0.5s ease-in-out 4; }
+@keyframes moodShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+/* 深呼吸引导：鲸鱼缓慢膨胀收缩（吸气～呼气～） */
+.stage[data-mood="breath"] .whale { animation: moodBreath 4s ease-in-out 2; }
+@keyframes moodBreath {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(1.1) translateY(-3px); }
+  60% { transform: scale(1.02); }
+}
+
+/* ---- 看家模式：主人不在，鲸鱼闭眼值守（变暗、慢呼吸）----
+   只压亮度、不抽饱和度：主人自选的颜色要留住（用户配色优先）。 */
+.stage[data-owner="away"] .whale {
+  filter: brightness(0.62);
+  opacity: 0.75;
+  animation: breathe 3.5s ease-in-out infinite;
+}
+.stage[data-owner="away"] .eye-pupil { transition: ry 0.5s; }
+.stage[data-owner="away"] .blush { opacity: 0.25; }
+
+/* ---- 心情面板（记录为主 + ⚙ 设置）---- */
+/* 心情面板：只占上半部（50%），下半部留给鲸鱼 —— 主人能一边看日记一边看鲸鱼的反应。
+   尺寸依据（改窗口大小时要一起算）：窗口高 440；鲸鱼是正方形 SVG（viewBox 120×120），
+   宽 62%×320≈198px → 高约 198px，底部再留 8px → 鲸鱼顶端在 234px 处；面板 220px 正好不打架。
+   注意：面板不再覆盖整窗，所以"点空白处关闭"只在面板区域内有效，关闭请点右上角 ✕；
+   好处是鲸鱼露在外面，还能抚摸/拖动它。 */
+.mood-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 14, 30, 0.82);
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.45);
+  -webkit-app-region: no-drag;
+}
+.mood-panel-box {
+  width: 300px;
+  max-height: 96%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: rgba(12, 30, 56, 0.97);
+  border: 1px solid rgba(127, 180, 255, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+.mood-panel-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px 7px;
+  font: 700 13px/1.3 "Microsoft YaHei", system-ui, sans-serif;
+  color: #9fd0ff;
+  border-bottom: 1px solid rgba(127, 180, 255, 0.25);
+}
+.mood-panel-actions { display: flex; gap: 2px; }
+.mood-panel-icon {
+  border: 0;
+  background: transparent;
+  color: #7fb4ff;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.mood-panel-icon:hover { color: #7fffd4; }
+.mood-panel-body {
+  padding: 8px 12px 10px;
+  overflow-y: auto;
+  font: 11px/1.6 "Microsoft YaHei", system-ui, sans-serif;
+  color: #dbe9ff;
+}
+.mr-now { color: #7fffd4; margin-bottom: 4px; }
+.mr-dist { display: flex; flex-wrap: wrap; gap: 4px; }
+.mr-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(127, 180, 255, 0.14);
+  border: 1px solid rgba(127, 180, 255, 0.3);
+  font-size: 10.5px;
+}
+.mr-events { display: flex; flex-direction: column; gap: 6px; }
+.mr-event {
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(10, 28, 52, 0.6);
+  border: 1px solid rgba(127, 180, 255, 0.22);
+}
+.mr-event-head { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.mr-time { color: #ffd27f; font-weight: 700; }
+.mr-change { color: #e8f3ff; }
+.mr-delta { color: #7fffd4; font-size: 10px; }
+.mr-reason { margin-top: 3px; color: #b9d4f7; }
+.mr-reason.mr-pending { color: #8aa8cc; font-style: italic; }
+.mr-empty { color: #8aa8cc; text-align: center; padding: 8px 0; }
+.mr-loading { text-align: center; color: #9fd0ff; padding: 18px 0; }
+.mr-hint { margin-top: 8px; color: #6f89a8; font-size: 10px; }
+
+/* ---- 心情面板：分区卡片 / 行 / 字段 ---- */
+.mr-card {
+  margin: 8px 0 0;
+  padding: 8px 10px 9px;
+  border-radius: 10px;
+  background: rgba(8, 22, 40, 0.62);
+  border: 1px solid rgba(127, 180, 255, 0.18);
+}
+.mr-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-weight: 700;
+  color: #9fd0ff;
+  margin-bottom: 5px;
+}
+.mr-tag {
+  font-weight: 400;
+  font-size: 9.5px;
+  color: #7fa8d6;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(127, 180, 255, 0.12);
+  border: 1px solid rgba(127, 180, 255, 0.22);
+}
+.mr-badge {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 9.5px;
+  color: #7fffd4;
+}
+.mr-row { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.mr-row-label { flex: 1; color: #b9d4f7; }
+.mr-row-ctrl { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; }
+.mr-field { margin-top: 7px; }
+.mr-field-label { color: #b9d4f7; margin-bottom: 3px; }
+.mr-field-ctrl { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.mr-num {
+  width: 56px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(127, 180, 255, 0.4);
+  background: rgba(8, 22, 38, 0.9);
+  color: #eaf4ff;
+  font: 11px/1.3 "Microsoft YaHei", system-ui, sans-serif;
+  outline: none;
+}
+.mr-num:focus { border-color: #7fffd4; }
+.mr-unit { color: #8aa8cc; }
+.mr-note { margin-top: 6px; color: #6f89a8; font-size: 10px; line-height: 1.5; }
+.mr-msg {
+  margin-top: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 10.5px;
+}
+.mr-msg.ok {
+  color: #7fffd4;
+  background: rgba(127, 255, 212, 0.1);
+  border: 1px solid rgba(127, 255, 212, 0.25);
+}
+.mr-msg.bad {
+  color: #ffb3b3;
+  background: rgba(255, 120, 120, 0.1);
+  border: 1px solid rgba(255, 120, 120, 0.25);
+}
+.mr-dayhead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(127, 180, 255, 0.16);
+  cursor: pointer;
+  user-select: none;
+}
+.mr-dayhead:hover .mr-day-label { color: #7fffd4; }
+.mr-day-label { color: #ffd27f; font-weight: 700; }
+.mr-day-count { color: #6f89a8; font-size: 10px; margin-left: auto; }
+
+/* 可折叠的区块标题 */
+.mr-toggle { cursor: pointer; user-select: none; }
+.mr-toggle:hover { color: #7fffd4; }
+.mr-caret { color: #7fb4ff; font-size: 9px; margin-left: 4px; }
+
+/* ---- 表单控件 ---- */
+.mr-btn {
+  border: 1px solid rgba(127, 180, 255, 0.4);
+  background: rgba(127, 180, 255, 0.12);
+  color: #dbe9ff;
+  font: 11.5px/1.4 "Microsoft YaHei", system-ui, sans-serif;
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.mr-btn:hover { background: rgba(127, 180, 255, 0.25); }
+.mr-btn-cancel { background: transparent; color: #8aa8cc; }
+
+.lock-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(127, 180, 255, 0.4);
+  background: rgba(8, 22, 38, 0.9);
+  color: #eaf4ff;
+  font: 11.5px/1.4 "Microsoft YaHei", system-ui, sans-serif;
+  outline: none;
+}
+.lock-input:focus { border-color: #7fffd4; }
+.mr-btn-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.mr-chip.pick { cursor: pointer; }
+.mr-chip.pick:hover { background: rgba(127, 180, 255, 0.3); }
+.mr-chip.on {
+  background: rgba(127, 255, 212, 0.2);
+  border-color: #7fffd4;
+  color: #7fffd4;
+}
+/* 换装配色色块：小方砖，选中加青边 */
+.mr-chip.swatch {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  border-radius: 5px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  box-sizing: border-box;
+}
+.mr-chip.swatch.on {
+  border-color: #7fffd4;
+  box-shadow: 0 0 0 2px rgba(127, 255, 212, 0.35);
+}
+
+/* ---- 关键帧 ---- */
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+@keyframes tailWiggle {
+  0%, 100% { transform: rotate(-15deg); }
+  50% { transform: rotate(15deg); }
+}
+
+@keyframes tailWag {
+  0%, 100% { transform: rotate(-15deg); }
+  50% { transform: rotate(15deg); }
+}
+
+@keyframes dropRise {
+  0% { transform: translateY(4px); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translateY(-18px); opacity: 0; }
+}
+
+@keyframes nod {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(1px) rotate(-3deg); }
+}
+
+@keyframes toolSwing {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(8deg); }
+}
+
+@keyframes signBeckon {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg); }
+}
+
+@keyframes jump {
+  0% { transform: translateY(0) rotate(0); }
+  35% { transform: translateY(-20px) rotate(-8deg); }
+  65% { transform: translateY(-5px) rotate(4deg); }
+  100% { transform: translateY(0) rotate(0); }
+}
+
+@keyframes bellyFlip {
+  0% { transform: rotate(0); }
+  25% { transform: rotate(180deg); }
+  75% { transform: rotate(180deg); }
+  100% { transform: rotate(0); }
+}
+
+/* ============================================================
+   拖动反馈动画（拖动期间持续循环，置于文件末尾保证优先级）
+   ============================================================ */
+
+/* 挣扎：被拖动时持续扭动（幅度渐入避免突兀） */
+.whale.struggling {
+  animation: whaleStruggle 0.9s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite !important;
+}
+
+@keyframes whaleStruggle {
+  0% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  10% { transform: translate(-3px, 0) rotate(-6deg) scale(1.01); }
+  20% { transform: translate(3px, 0) rotate(6deg) scale(0.99); }
+  30% { transform: translate(-4px, 0) rotate(-8deg) scale(1.01); }
+  40% { transform: translate(4px, 0) rotate(7deg) scale(0.99); }
+  50% { transform: translate(-3px, 0) rotate(-6deg) scale(1); }
+  60% { transform: translate(3px, 0) rotate(5deg) scale(1); }
+  70% { transform: translate(-2px, 0) rotate(-4deg) scale(1); }
+  80% { transform: translate(2px, 0) rotate(3deg) scale(1); }
+  90% { transform: translate(-1px, 0) rotate(-2deg) scale(1); }
+  100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+}
+
+/* 挣扎时嘴巴张大、眼睛圆瞪 */
+.whale.struggling .mouth {
+  transform: scale(2) !important;
+  transform-origin: center;
+}
+
+.whale.struggling .eye-pupil {
+  transform: scale(0.6) !important;
+  transform-origin: center;
+}
+
+/* 抚摸：拖动时持续愉悦轻摇 */
+.whale.petted {
+  animation: whalePetted 1.3s ease-in-out infinite !important;
+}
+
+@keyframes whalePetted {
+  0% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  12% { transform: translate(1px, -2px) rotate(2deg) scale(1.02); }
+  25% { transform: translate(-1px, -3px) rotate(-2deg) scale(1.02); }
+  38% { transform: translate(1px, -2px) rotate(2deg) scale(1.01); }
+  50% { transform: translate(-1px, -3px) rotate(-1.5deg) scale(1.01); }
+  63% { transform: translate(1px, -2px) rotate(1.5deg) scale(1.01); }
+  76% { transform: translate(-1px, -1px) rotate(-1deg) scale(1); }
+  100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+}
+
+/* 抚摸时眯眼成月牙：瞳孔压扁 + 眨眼遮罩 */
+.whale.petted .eye-pupil {
+  transform: scaleY(0.2) translateY(2px) !important;
+  transform-origin: center;
+}
+
+.whale.petted .eye-shine {
+  opacity: 0 !important;
+}
+
+.whale.petted .eye-white {
+  transform: scaleY(0.55) !important;
+  transform-origin: center;
+}
+
+/* 抚摸时尾巴轻快摆动（JS 尾巴暂停后由 CSS 接管） */
+.whale.petted .tail-group {
+  animation: pettedTailWag 0.35s ease-in-out infinite !important;
+  transform-origin: 26px 57px;
+}
+
+@keyframes pettedTailWag {
+  0%, 100% { transform: rotate(-12deg); }
+  50% { transform: rotate(12deg); }
+}
+
+/* 挣扎时尾巴大幅快速甩动 */
+.whale.struggling .tail-group {
+  animation: struggleTail 0.22s ease-in-out infinite !important;
+  transform-origin: 26px 57px;
+}
+
+@keyframes struggleTail {
+  0%, 100% { transform: rotate(-22deg); }
+  50% { transform: rotate(22deg); }
+}

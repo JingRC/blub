@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'"
+      http-equiv="Content-Security-Policy"
+    />
+    <title>桌宠识别实验室</title>
+    <style>
+      :root {
+        --bg: #0b1622;
+        --card: #10233a;
+        --card2: #0e1e33;
+        --line: #1d3550;
+        --line2: #16304a;
+        --tx: #e8f1fb;
+        --tx2: #a9c3dc;
+        --tx3: #7f9ab5;
+        --acc: #5ad1ff;
+        --blue: #1e6fd9;
+        --blue2: #2b86ff;
+        --ok: #6ee7a8;
+        --warn: #ffd479;
+        --bad: #ff8a8a;
+      }
+      * { box-sizing: border-box; }
+      /* 作者样式里的 display 会压过 hidden 属性（踩过这个坑），这里统一兜住 */
+      [hidden] { display: none !important; }
+      html, body { height: 100%; }
+      body {
+        margin: 0; background: var(--bg); color: var(--tx);
+        font-family: "Microsoft YaHei", system-ui, sans-serif; font-size: 13px; line-height: 1.55;
+        display: flex; flex-direction: column; overflow: hidden;
+      }
+
+      .topbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        padding: 9px 16px; border-bottom: 1px solid var(--line); background: #0d1b2c;
+      }
+      .app-title { font-size: 15px; font-weight: 700; margin: 0; }
+      .app-sub { color: var(--tx3); font-size: 12px; }
+      .state { color: var(--tx3); font-size: 12px; }
+
+      .layout { flex: 1 1 auto; display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 14px; padding: 14px 16px; overflow: hidden; }
+
+      /* 左：取景 + 实时读数 */
+      .cam { display: flex; flex-direction: column; gap: 7px; }
+      .cam-frame { position: relative; border-radius: 9px; overflow: hidden; background: #050d18; border: 1px solid var(--line); }
+      #preview { width: 100%; display: block; transform: scaleX(-1); }
+      .cam-status { position: absolute; inset: 0 0 auto 0; padding: 3px 7px; font-size: 11px; background: rgba(5, 13, 24, 0.82); color: var(--warn); }
+      .mono { font-family: Consolas, monospace; font-size: 12px; color: #9fe3ff; font-variant-numeric: tabular-nums; }
+      .readout { padding: 5px 8px; border-radius: 7px; background: var(--card2); border: 1px solid var(--line); }
+      .cam-hint { color: var(--tx3); font-size: 11px; }
+
+      .panel { overflow-y: auto; padding-right: 4px; }
+      .panel::-webkit-scrollbar { width: 9px; }
+      .panel::-webkit-scrollbar-thumb { background: #1d3550; border-radius: 5px; }
+
+      .hint-line { color: var(--tx3); font-size: 12px; margin-bottom: 9px; }
+
+      /* 选中后出现的一条操作栏（代替每行一个按钮） */
+      .act-bar {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        background: #13304c; border: 1px solid var(--line); border-left: 3px solid var(--acc);
+        border-radius: 8px; padding: 8px 11px; margin-bottom: 10px;
+      }
+      .act-what { flex: 1 1 auto; min-width: 0; }
+      .act-what b { color: #fff; }
+
+      button {
+        font-family: inherit; font-size: 13px; padding: 6px 13px; border-radius: 7px;
+        border: 1px solid #2a4a6b; background: #16324e; color: var(--tx); cursor: pointer;
+      }
+      button:hover:not(:disabled) { border-color: var(--blue2); }
+      button.primary { background: var(--blue); border-color: var(--blue2); font-weight: 700; }
+      button:disabled { opacity: 0.45; cursor: default; }
+      button.mini { padding: 3px 9px; font-size: 12px; }
+
+      /* 演示面板（只在演示时出现，不占常驻空间） */
+      .demo { background: var(--card); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; margin-bottom: 12px; }
+      .demo-top { display: flex; align-items: baseline; gap: 8px; }
+      .step-no { color: var(--acc); font-size: 12px; letter-spacing: 0.5px; }
+      .demo-title { font-size: 17px; font-weight: 700; margin: 2px 0 4px; }
+      .demo-hint { color: var(--tx2); min-height: 40px; }
+      .countdown { font-size: 30px; font-weight: 700; font-family: Consolas, monospace; color: #ffb347; margin: 2px 0; }
+      .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 2px 0 8px; }
+      .bar > i { display: block; height: 100%; width: 0; background: var(--acc); transition: width 0.2s linear; }
+      .actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 10px; }
+      .demo label { display: block; font-size: 12px; color: var(--tx2); margin-bottom: 7px; }
+      .demo input {
+        width: 100%; margin-top: 3px; padding: 5px 8px; border-radius: 6px; font-family: inherit;
+        border: 1px solid #2a4a6b; background: var(--bg); color: var(--tx);
+      }
+      .demo-frames { display: flex; gap: 8px; margin-top: 9px; }
+      .demo-frames img { width: 88px; border-radius: 6px; border: 1px solid var(--line); }
+
+      /* 记录列表：紧凑，一行一项，点一行=选中 */
+      .grp {
+        display: flex; align-items: center; gap: 6px; color: var(--tx3); font-size: 12px;
+        margin: 12px 0 4px; padding-top: 8px; border-top: 1px solid var(--line2);
+      }
+      .grp:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+      .grp .dot { width: 5px; height: 5px; border-radius: 3px; background: var(--acc); }
+      .row {
+        display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 7px;
+        cursor: pointer; border: 1px solid transparent;
+      }
+      .row:hover { background: rgba(90, 209, 255, 0.06); }
+      .row.sel { background: rgba(30, 111, 217, 0.22); border-color: var(--blue2); }
+      .row .ic { width: 18px; text-align: center; }
+      .row .nm { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .row .num { color: var(--tx3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .row .num b { color: #cfe4f7; font-weight: 600; }
+      .row .del { padding: 1px 7px; font-size: 11px; color: #ffb4b4; border-color: #6b2a33; background: #3a1c22; }
+      .note { color: var(--tx3); font-size: 12px; padding: 3px 9px 0; }
+      .tag { font-size: 11px; color: var(--acc); border: 1px solid #2a4a6b; border-radius: 4px; padding: 0 5px; white-space: nowrap; }
+      .scroll { max-height: 208px; overflow-y: auto; }
+      .scroll::-webkit-scrollbar { width: 8px; }
+      .scroll::-webkit-scrollbar-thumb { background: #1d3550; border-radius: 4px; }
+      .saved { font-size: 12px; color: var(--tx3); margin-top: 8px; word-break: break-word; }
+      .saved.ok { color: var(--ok); }
+      .saved.warn { color: var(--warn); }
+      .saved.bad { color: var(--bad); }
+      .verdict { margin-top: 8px; }
+      .verdict b { font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1 class="app-title">桌宠识别实验室</h1>
+        <div class="app-sub">觉得哪个识别不对：点它 → 对着镜头演示一遍真实的样子 → 桌宠 5 秒内学会（不用重启）</div>
+      </div>
+      <div class="state" id="state">正在加载人脸模型…</div>
+    </header>
+
+    <div class="layout">
+      <aside class="cam">
+        <div class="cam-frame">
+          <video id="preview" autoplay muted playsinline></video>
+          <div id="status" class="cam-status">正在加载人脸模型…</div>
+        </div>
+        <div class="readout mono" id="metrics">嘴=- / -　眼=-　脸=-</div>
+        <div class="cam-hint">坐下、正对镜头、让光落在脸上</div>
+      </aside>
+
+      <main class="panel">
+        <!-- 选中一行后出现的操作栏（只此一个按钮，不再每行重复） -->
+        <div class="act-bar" id="actBar" hidden>
+          <span class="act-what" id="actWhat"></span>
+          <button id="actRunBtn" class="primary">演示真实动作</button>
+          <button id="actCancelBtn" class="mini">取消选择</button>
+        </div>
+
+        <div class="hint-line" id="hintLine">
+          点下面任意一行来选它；「哈欠」会带你做三段（先故意张嘴、再托下巴、最后真打哈欠），自动算出阈值。
+        </div>
+
+        <!-- 演示向导：只在演示/出结果时出现 -->
+        <div class="demo" id="demoBox" hidden>
+          <div class="demo-top">
+            <span class="step-no" id="demoNo">演示</span>
+            <span class="tag" id="demoTag" hidden></span>
+          </div>
+          <div class="demo-title" id="demoTitle"></div>
+          <div class="demo-hint" id="demoHint"></div>
+          <div id="demoNew" hidden>
+            <label>动作名字<input id="demoLabel" placeholder="例如：喝水" /></label>
+            <label>一句话描述（可选，帮模型理解）<input id="demoDesc" placeholder="把水杯送到嘴边喝一口" /></label>
+          </div>
+          <div class="countdown" id="demoCount" hidden>--</div>
+          <div class="bar" id="demoBar" hidden><i id="demoProgress"></i></div>
+          <div class="readout mono" id="demoPeak" hidden></div>
+          <div class="actions">
+            <button id="demoStartBtn" class="primary">开始演示</button>
+            <button id="demoAgainBtn" hidden>再演示一次</button>
+            <button id="demoSaveBtn" class="primary" hidden>保存并生效</button>
+            <button id="demoCancelBtn" class="mini">取消</button>
+          </div>
+          <div class="saved" id="demoInfo"></div>
+          <div class="demo-frames" id="demoFrames"></div>
+        </div>
+
+        <div class="list" id="fbList">正在读取识别记录…</div>
+      </main>
+    </div>
+
+    <script src="../node_modules/@vladmandic/human/dist/human.js"></script>
+    <script src="../renderer/face.js"></script>
+    <script src="threshold.js"></script>
+    <script src="calib.js"></script>
+    <script src="feedback.js"></script>
+  </body>
+</html>

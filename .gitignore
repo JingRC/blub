@@ -1,0 +1,67 @@
+# 依赖
+node_modules/
+
+# 日志
+*.log
+
+# Electron / Chromium 运行时目录
+data/blob_storage/
+data/Cache/
+data/Code Cache/
+data/DawnGraphiteCache/
+data/DawnWebGPUCache/
+data/GPUCache/
+data/IndexedDB/
+data/Local Storage/
+data/Session Storage/
+data/Shared Dictionary/
+data/SharedStorage
+data/SharedStorage-wal
+data/Network/
+data/WebStorage/
+data/calib-userdata/
+data/DIPS
+data/DIPS-wal
+data/Local State
+data/Preferences
+data/DevToolsActivePort
+data/lockfile
+
+# QQ音乐守护的进程号文件
+data/qqm-daemon.pid
+__pycache__/
+
+# ---- 隐私：以下全部是用户本地数据，绝不进版本库 ----
+# API 密钥（明文）
+data/api-keys.json
+# 认主参考照（人脸）、人脸实测样本
+data/owner.json
+data/face-samples.jsonl
+data/face-samples.jsonl.1
+# 情绪/行为/事件/用量记录
+data/emotion-behavior.json
+data/emotion-events.json
+data/events.jsonl
+data/signal-segments.jsonl
+data/usage-history.json
+data/learned-actions.json
+data/lock.json
+data/privacy.json
+data/music.json
+data/profile.json
+data/outfit.json
+# 哈欠标定原始样本（含人脸度量）
+data/yawn-calibration*.json
+data/yawn-calibration*-report.txt
+# 内部知识包（公司项目资料，不外传）
+company-kb/
+# 个人开发日志
+开发记录.md
+
+# 打包产物与图标构建中间物
+release/
+build/icon.png
+.cache/
+
+# 临时探针脚本
+.envprobe.js

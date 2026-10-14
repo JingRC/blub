@@ -1,0 +1,97 @@
+{
+  "name": "blub",
+  "version": "1.0.0",
+  "description": "Blub — a deep-sea whale that lives on your Windows desktop: it watches your coding agent, mirrors its state, recognizes your face, yawns with you.",
+  "main": "main.js",
+  "type": "commonjs",
+  "license": "MIT",
+  "author": "JingRC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JingRC/blub.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "calib": "electron calib/main.js",
+    "icon": "node scripts/build-icon.js",
+    "pack": "node scripts/build-icon.js && electron-builder --win --dir",
+    "dist": "node scripts/build-icon.js && electron-builder --win"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@vladmandic/human": "^3.3.6",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.5"
+  },
+  "build": {
+    "appId": "dev.jingrc.blub",
+    "productName": "Blub",
+    "copyright": "Copyright © 2026 JingRC",
+    "electronDist": "node_modules/electron/dist",
+    "asarUnpack": [
+      "music-nowplaying.ps1",
+      "music-qqm-daemon.py"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "privacy.js",
+      "reminders.js",
+      "meeting.js",
+      "meeting-config.js",
+      "ask-hub.js",
+      "music.js",
+      "music-config.js",
+      "music-nowplaying.ps1",
+      "music-qqm-daemon.py",
+      "eventlog.js",
+      "dsh-client.js",
+      "emotion.js",
+      "guard.js",
+      "providers.js",
+      "signals.js",
+      "usage-store.js",
+      "outfit-config.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "calib/**/*",
+      "node_modules/**/*",
+      "!node_modules/**/{test,tests,example,examples,docs,doc}/**",
+      "!node_modules/**/*.{md,ts,map}",
+      "!node_modules/.cache/**",
+      "!**/probe-providers.js",
+      "!**/.envprobe.js",
+      "!**/debug.log",
+      "!**/*.bak"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Blub",
+      "artifactName": "Blub-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

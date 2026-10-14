@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>欢迎使用 · 初次设置</title>
+    <style>
+      :root {
+        --bg: #0b1622;
+        --bg-card: #0f2438;
+        --bg-input: #07101a;
+        --fg: #d6e6f5;
+        --fg-dim: #8aa3bd;
+        --accent: #5dc0ff;
+        --ok: #4ade80;
+        --warn: #f59e0b;
+        --err: #f87171;
+        --border: #1e3a55;
+      }
+      html, body {
+        margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+        font: 14px/1.5 "Microsoft YaHei", system-ui, sans-serif;
+      }
+      .app {
+        padding: 22px 26px 28px;
+        max-width: 600px; margin: 0 auto;
+        display: flex; flex-direction: column; gap: 14px;
+        min-height: 100vh; box-sizing: border-box;
+      }
+      h1 { font-size: 22px; margin: 0 0 6px; color: #9fd0ff; }
+      .sub { color: var(--fg-dim); margin-bottom: 8px; }
+      .steps {
+        display: flex; gap: 6px; margin-bottom: 6px;
+      }
+      .step-dot {
+        flex: 1; height: 4px; border-radius: 2px;
+        background: var(--border);
+      }
+      .step-dot.active { background: var(--accent); }
+      .step-dot.done { background: var(--ok); }
+      .step-num { font-size: 12px; color: var(--fg-dim); }
+      .card {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 10px; padding: 16px 18px;
+        display: flex; flex-direction: column; gap: 10px;
+      }
+      label {
+        display: flex; flex-direction: column; gap: 4px;
+        font-size: 13px; color: var(--fg-dim);
+      }
+      input[type=text], input[type=password], select {
+        background: var(--bg-input); color: var(--fg);
+        border: 1px solid var(--border); border-radius: 6px;
+        padding: 8px 10px; font: 14px/1.4 "Microsoft YaHei", system-ui, sans-serif;
+        width: 100%; box-sizing: border-box;
+      }
+      input:focus, select:focus { outline: none; border-color: var(--accent); }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .row > * { flex: 1; min-width: 0; }
+      .row > .btn { flex: 0 0 auto; }
+      button {
+        background: var(--bg-input); color: var(--fg);
+        border: 1px solid var(--border); border-radius: 6px;
+        padding: 8px 14px; cursor: pointer; font: 14px/1.4 inherit;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { opacity: 0.45; cursor: default; }
+      button.primary { background: var(--accent); color: #06131f; border-color: var(--accent); font-weight: 600; }
+      button.ghost { background: transparent; }
+      .btn-row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+      .status {
+        font-size: 12px; min-height: 16px;
+      }
+      .status.ok { color: var(--ok); }
+      .status.warn { color: var(--warn); }
+      .status.err { color: var(--err); }
+      .hint {
+        font-size: 12px; color: var(--fg-dim); background: var(--bg-input);
+        border-left: 2px solid var(--border); padding: 8px 10px; border-radius: 4px;
+      }
+      .hint a { color: var(--accent); }
+      .pill {
+        display: inline-block; padding: 2px 8px; border-radius: 999px;
+        background: var(--bg-input); color: var(--fg-dim); font-size: 12px;
+      }
+      .pill.vision { border-left: 2px solid var(--accent); }
+      .pill.text { border-left: 2px solid var(--warn); }
+      .center { text-align: center; }
+      .hero { font-size: 56px; margin: 10px 0 0; }
+    </style>
+  </head>
+  <body>
+    <div class="app" id="app"></div>
+    <script src="firstrun.js"></script>
+  </body>
+</html>

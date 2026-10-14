@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'" />
+    <title>DSH 桌宠</title>
+    <link rel="stylesheet" href="pet.css" />
+  </head>
+  <body>
+    <div id="stage" class="stage" data-state="disconnected">
+      <!-- 呆萌方块鲸鱼：不对称+呆毛+大小眼 -->
+      <svg id="whale" class="whale" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <!-- 本体光影渐变。关键：gradientUnits="userSpaceOnUse" 让身体/尾鳍/背鳍/腿
+             共享同一段光照；若用默认的 objectBoundingBox，每个部件会按自己的包围盒
+             各算一次渐变，整只鲸鱼会碎成一块一块。stop 的颜色由 pet.css 的 CSS 变量给，
+             所以换配色只改变量、不改这里。 -->
+        <defs>
+          <linearGradient id="whaleBody" gradientUnits="userSpaceOnUse" x1="0" y1="42" x2="0" y2="96">
+            <stop offset="0" class="wb-hi" />
+            <stop offset="0.55" class="wb-mid" />
+            <stop offset="1" class="wb-lo" />
+          </linearGradient>
+        </defs>
+
+        <!-- 底部柔和投影（SVG 内部，避免 CSS filter 在拖动时放大） -->
+        <ellipse cx="60" cy="96" rx="42" ry="8" fill="rgba(10, 31, 61, 0.28)" />
+        <!-- 呆毛（头顶翘起的一小撮） -->
+        <path d="M60 30 Q65 20 70 25" class="ahoge" />
+
+        <!-- 尾巴（方块化，稍微歪一点） -->
+        <g class="tail-group">
+          <rect x="8" y="52" width="18" height="10" rx="2" class="block-fill" transform="rotate(-3 17 57)" />
+          <rect x="4" y="46" width="10" height="8" rx="2" class="block-fill" transform="rotate(-5 9 50)" />
+          <rect x="4" y="64" width="10" height="8" rx="2" class="block-fill" transform="rotate(2 9 68)" />
+        </g>
+
+        <!-- 背鳍（稍微歪） -->
+        <rect x="50" y="32" width="12" height="14" rx="2" class="block-fill" transform="rotate(5 56 39)" />
+
+        <!-- 身体（方块圆角矩形，稍微歪一点） -->
+        <rect x="20" y="46" width="80" height="32" rx="8" class="block-fill" transform="rotate(-2 60 62)" />
+
+        <!-- 肚子（浅色块） -->
+        <rect x="32" y="66" width="56" height="10" rx="5" class="belly" transform="rotate(-2 60 71)" />
+
+        <!-- 换装图层（renderer/outfit.js 往里画；挂在鲸鱼里所以点头/漂浮/跳跃会带着装扮一起动）
+             图层顺序 = 遮挡关系：配饰在帽子下面，帽子在眼睛下面 -->
+        <g id="extraLayer" class="gear-layer"></g>
+        <g id="hatLayer" class="gear-layer"></g>
+
+        <!-- 侧鳍 -->
+        <rect x="66" y="80" width="20" height="10" rx="4" class="block-fill" transform="rotate(8 76 85)" />
+
+        <!-- 两条小短腿（不对称，一长一短） -->
+        <rect x="36" y="82" width="14" height="12" rx="4" class="block-fill" />
+        <rect x="70" y="80" width="14" height="14" rx="4" class="block-fill" />
+
+        <!-- 腮红（不对称，左边大右边小） -->
+        <ellipse cx="42" cy="70" rx="7" ry="5" class="blush" />
+        <ellipse cx="78" cy="69" rx="5" ry="4" class="blush" />
+
+        <!-- 左眼：大圆眼 -->
+        <circle cx="48" cy="58" r="7" class="eye-white" />
+        <circle cx="48" cy="58" r="4.5" class="eye-pupil" />
+        <circle cx="46" cy="56" r="2" class="eye-shine" />
+
+        <!-- 右眼：小一点（呆萌感） -->
+        <circle cx="72" cy="59" r="6" class="eye-white" />
+        <circle cx="72" cy="59" r="3.5" class="eye-pupil" />
+        <circle cx="70" cy="57" r="1.5" class="eye-shine" />
+
+        <!-- 嘴巴：O 型（惊讶/呆萌） -->
+        <ellipse cx="60" cy="68" rx="3" ry="4" class="mouth" />
+
+        <!-- 眼镜 / 口罩层：盖在眼睛和嘴上面 -->
+        <g id="faceLayer" class="gear-layer"></g>
+
+        <!-- 喷气孔水滴（thinking 时出现） -->
+        <g id="spout" class="spout">
+          <rect x="52" y="20" width="10" height="10" rx="3" class="drop d1" />
+          <rect x="44" y="10"  width="8"  height="8"  rx="2" class="drop d2" />
+          <rect x="62" y="10"  width="8"  height="8"  rx="2" class="drop d3" />
+        </g>
+
+        <!-- 状态气泡 -->
+        <g id="bubble" class="bubble-icon">
+          <rect x="84" y="30" width="24" height="24" rx="4" class="bubble-bg" />
+          <text id="bubbleText" class="bubble-text" x="96" y="49" text-anchor="middle" font-size="16" font-family="system-ui, sans-serif" font-weight="700">?</text>
+        </g>
+
+        <!-- 手持道具层：画在侧鳍边、工具之前（工具在 tool 状态会盖住它，符合"手里拿东西"的观感） -->
+        <g id="handLayer" class="gear-layer"></g>
+
+        <!-- 方块工具 -->
+        <g id="tool" class="tool-held">
+          <rect x="86" y="74" width="6"  height="16" rx="2" class="tool-handle" />
+          <rect x="82" y="68" width="14" height="10" rx="2" class="tool-head" />
+        </g>
+
+        <!-- 提示牌 -->
+        <g id="sign" class="sign">
+          <rect x="84" y="32" width="24" height="20" rx="4" class="sign-bg" />
+          <text x="96" y="48" text-anchor="middle" font-size="14" font-family="system-ui, sans-serif" font-weight="700">!</text>
+        </g>
+      </svg>
+
+      <!-- 右上角工具：📌 = 置顶开关（和双击鲸鱼等效） -->
+      <div id="petTools" class="pet-tools">
+        <button id="pinBtn" class="pet-tool-btn" type="button" data-on="1" title="已置顶（点击取消置顶）">📌</button>
+      </div>
+
+      <!-- 泡泡菜单容器 -->
+      <div id="bubbleMenu" class="bubble-menu">
+        <div class="bubble-item" data-action="feed">
+          <div class="bubble-circle">🍖</div>
+          <div class="bubble-label">投喂鲸鱼</div>
+        </div>
+        <div class="bubble-item" data-action="ask">
+          <div class="bubble-circle">💬</div>
+          <div class="bubble-label">提问</div>
+        </div>
+        <div class="bubble-item" data-action="play">
+          <div class="bubble-circle">🤸</div>
+          <div class="bubble-label">玩耍</div>
+        </div>
+        <div class="bubble-item" data-action="mood">
+          <div class="bubble-circle">😊</div>
+          <div class="bubble-label">心情</div>
+        </div>
+        <div class="bubble-item" data-action="meal">
+          <div class="bubble-circle">🍚</div>
+          <div class="bubble-label">吃饭</div>
+        </div>
+        <div class="bubble-item" data-action="meet">
+          <div class="bubble-circle" id="meetBubbleIcon">🎧</div>
+          <div class="bubble-label" id="meetBubbleLabel">旁听</div>
+        </div>
+        <!-- 暂停/继续：只在正在旁听时才出现（会中休息），平时 hidden 不占位置 -->
+        <div class="bubble-item" data-action="meet-pause" id="pauseBubbleItem" hidden>
+          <div class="bubble-circle" id="pauseBubbleIcon">⏸</div>
+          <div class="bubble-label" id="pauseBubbleLabel">暂停</div>
+        </div>
+        <div class="bubble-item" data-action="meet-ask" id="askBubbleItem" hidden>
+          <div class="bubble-circle">💡</div>
+          <div class="bubble-label">秒答</div>
+        </div>
+        <div class="bubble-item" data-action="minutes">
+          <div class="bubble-circle">📝</div>
+          <div class="bubble-label">纪要</div>
+        </div>
+        <div class="bubble-item" data-action="hat">
+          <div class="bubble-circle">🎩</div>
+          <div class="bubble-label">换装</div>
+        </div>
+        <div class="bubble-item" data-action="close">
+          <div class="bubble-circle">✖️</div>
+          <div class="bubble-label">关闭</div>
+        </div>
+      </div>
+
+      <!-- 子泡泡菜单（点击主泡泡后展开） -->
+      <div id="subMenu" class="sub-menu"></div>
+
+      <!-- 暴击效果容器（星星爆炸 + 冲击波） -->
+      <div id="critBurst" class="crit-burst">
+        <div class="flash"></div>
+        <div class="ring"></div>
+        <div class="crit-text">暴击!</div>
+      </div>
+
+      <div id="status" class="status" style="display: none;">深海鲸鱼 · 启动中…</div>
+
+      <!-- 实时用量统计条（鲸鱼下方：按来源分行） -->
+      <div id="usageBar" class="usage-bar" hidden>
+        <div class="usage-tokens" id="usageTokens">0 tok</div>
+        <div class="usage-rows" id="usageRows"></div>
+      </div>
+
+      <!-- 会议旁听：实时字幕条（只在旁听时出现，鲸鱼下方） -->
+      <div id="meetingBar" class="meeting-bar" hidden>
+        <div id="meetingBarMeta" class="meeting-bar-meta">🎧 记录中 00:00</div>
+        <div id="meetingBarText" class="meeting-bar-text"></div>
+      </div>
+
+      <!-- 心情陪伴气泡（情绪监测 / 陪伴消息，鲸鱼上方） -->
+      <div id="moodBubble" class="mood-bubble" hidden>
+        <div id="moodBubbleText" class="mood-bubble-text"></div>
+      </div>
+
+      <!-- 心情面板（记录为主，右上角 ⚙ 切到设置） -->
+      <div id="moodPanel" class="mood-panel" hidden>
+        <div class="mood-panel-box">
+          <div class="mood-panel-title">
+            <span id="moodPanelTitle">🐋 心情记录</span>
+            <span class="mood-panel-actions">
+              <button id="moodFeedbackBtn" class="mood-panel-icon" title="识别反馈 / 演示教学（学新动作）">🎓</button>
+              <button id="moodGearBtn" class="mood-panel-icon" title="设置（独立窗口）">⚙</button>
+              <button id="moodPanelClose" class="mood-panel-icon" title="关闭">✕</button>
+            </span>
+          </div>
+          <div id="moodPanelBody" class="mood-panel-body"></div>
+        </div>
+      </div>
+
+      <!-- 情绪监测采集元素（永远隐藏，仅用于抓帧） -->
+      <video id="emotionVideo" autoplay muted playsinline style="display: none;"></video>
+      <canvas id="emotionCanvas" style="display: none;"></canvas>
+
+      <!-- 自定义对话框（替代 prompt/alert，Electron 不支持 prompt） -->
+      <div id="petDialog" class="pet-dialog" hidden>
+        <div class="dialog-box">
+          <div id="dialogTitle" class="dialog-title"></div>
+          <div id="dialogBody" class="dialog-body"></div>
+          <div id="dialogInputWrap" class="dialog-input-wrap" hidden>
+            <input id="dialogInput" class="dialog-input" type="text" />
+          </div>
+          <div class="dialog-actions">
+            <button id="dialogCancel" class="dialog-btn">取消</button>
+            <button id="dialogOk" class="dialog-btn primary">确定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="../node_modules/@vladmandic/human/dist/human.js"></script>
+    <script src="outfit.js"></script>
+    <script src="face.js"></script>
+    <script src="pet.js"></script>
+    <script src="emotion.js"></script>
+    <script src="meeting.js"></script>
+  </body>
+</html>
